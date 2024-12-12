@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Quiz Game</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        .dragging {
+            opacity: 0.5;
+        }
+        .positioned-tool {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            cursor: move;
+            z-index: 1;
+        }
+        #dragdrop-container {
+            margin: 20px auto;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            height: 700px; 
+        }
+    
+        #tools-container {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+    
+        #tools {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+    
+        #drop-zone {
+            width: 400px;
+            height: 600px;
+            border: 2px dashed #ccc;
+            position: relative;
+            border-radius: 4px;
+            background-image: url('https://static.vecteezy.com/system/resources/previews/035/376/549/non_2x/cute-boy-human-body-cartoon-vector.jpg');
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center;
+            background-color: transparent;
+            margin-bottom: 20px;
+            margin-bottom: 70px; 
+        }
+    
+        .submit-button-container {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            padding: 20px 0;
+            position: relative;
+            clear: both;
+        }
+    
+        .tool {
+            display: inline-block;
+            padding: 10px;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: move;
+        }
+    
+        .tool img {
+            width: 100px;
+            height: 100px;
+            pointer-events: none;
+        }
+    
+        .positioned-tool {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            cursor: move;
+            z-index: 2;
+            background: transparent;
+            padding: 0;
+        }
+    
+        .positioned-tool img {
+            width: 50px;
+            height: 50px;
+        }
+    
+        .dragging {
+            opacity: 0.5;
+        }
+
+       
+        #heart-container {
+            margin: 80px auto 20px auto;
+            max-width: 800px;
+            min-height: 400px; /* Add minimum height to prevent collapse */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 40px; /* Increased gap between elements */
+            position: relative; /* For absolute positioning of children */
+        }
+        
+        
+        #question {
+            margin-bottom: 60px; /* Add space below question */
+        }
+        
+        
+        .heart-wrapper {
+            width: 300px; /* Larger area for heart growth */
+            height: 300px; /* Larger area for heart growth */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        
+        #heart {
+            width: 100px;
+            height: 100px;
+            background-color: #ff4444;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: rotate(45deg) scale(1) translate(-50%, -50%);
+            transform-origin: center;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        
+        #heart:before,
+        #heart:after {
+            content: '';
+            width: 100%;
+            height: 100%;
+            background-color: #ff4444;
+            border-radius: 50%;
+            position: absolute;
+            transition: all 0.1s;
+        }
+        
+        #heart:before {
+            left: -50%;
+        }
+        
+        #heart:after {
+            top: -50%;
+        }
+        
+        
+        #heart.size-1 { transform: rotate(45deg) scale(1) translate(-50%, -50%); }
+        #heart.size-2 { transform: rotate(45deg) scale(1.2) translate(-42%, -42%); }
+        #heart.size-3 { transform: rotate(45deg) scale(1.4) translate(-36%, -36%); }
+        #heart.size-4 { transform: rotate(45deg) scale(1.6) translate(-31%, -31%); }
+        #heart.size-5 { transform: rotate(45deg) scale(1.8) translate(-28%, -28%); }
+        
+       
+        #heart.size-1.pumping { transform: rotate(45deg) scale(0.9) translate(-55%, -55%); }
+        #heart.size-2.pumping { transform: rotate(45deg) scale(1.1) translate(-45%, -45%); }
+        #heart.size-3.pumping { transform: rotate(45deg) scale(1.3) translate(-38%, -38%); }
+        #heart.size-4.pumping { transform: rotate(45deg) scale(1.5) translate(-33%, -33%); }
+        #heart.size-5.pumping { transform: rotate(45deg) scale(1.7) translate(-29%, -29%); }
+        
+        #pump-counter {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1a73e8;
+            position: relative;
+            margin-top: 20px;
+        }
+        
+        .heart-controls {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="join" class="container">
+        <h2>Join Game</h2>
+        <input type="text" id="name-input" placeholder="Enter your name">
+        <button id="join-button" class="btn-primary">Join</button>
+        
+        <div id="players-list">
+            <h3>Players (<span id="player-count">0</span>/<span id="required-players">3</span>)</h3>
+            <div id="players"></div>
+        </div>
+        
+        <div id="waiting-message"></div>
+    </div>
+
+    <div id="game" class="container hidden">
+        <h2>Quiz</h2>
+        <div class="timer">Time: <span id="time">30</span>s</div>
+        <div id="question"></div>
+        
+        <div id="text-input" class="hidden">
+            <input type="text" id="answer-input" placeholder="Your answer">
+            <button onclick="submitAnswer()" class="btn-primary">Submit</button>
+        </div>
+
+        <div id="canvas-container" class="hidden">
+            <canvas id="drawingCanvas" width="400" height="300"></canvas>
+            <div class="drawing-tools">
+                <button onclick="clearCanvas()" class="btn-secondary">Clear Drawing</button>
+                <button onclick="submitDrawing()" class="btn-primary">Submit Drawing</button>
+            </div>
+        </div>
+
+        <div id="dragdrop-container" class="hidden">
+            <div id="tools-container">
+                <h3>Available Tools:</h3>
+                <div id="tools"></div>
+            </div>
+            <div id="drop-zone"></div>
+            <div id="submit-button-container">
+                <button onclick="submitDragDrop()" class="btn-primary">Submit Position</button>
+            </div>
+        </div>
+
+        <div id="heart-container" class="hidden">
+    <div class="heart-wrapper">
+        <div id="heart" class="size-1"></div>
+    </div>
+    <div id="pump-counter">Pumps: 0</div>
+    <div class="heart-controls">
+        <button class="pump-btn btn-primary">Pump Heart</button>
+    </div>
+</div>
+
+        <div id="answer-statuses"></div>
+    </div>
+
+    <div id="results" class="container hidden">
+        <h2>Results</h2>
+        <div id="winner"></div>
+        <div id="scores"></div>
+        <button onclick="playAgain()" class="btn-primary">Play Again</button>
+    </div>
+
+    <script>
+        const socket = io();
+        let playerName = '';
+        let isDrawing = false;
+        let isDragging = false;
+        let currentDragElement = null;
+        let ctx;
+        let requiredPlayers = 3;
+        let pumpCount = 0;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('join-button').addEventListener('click', joinGame);
+            
+            document.getElementById('name-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    joinGame();
+                }
+            });
+
+            document.getElementById('answer-input')?.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    submitAnswer();
+                }
+            });
+        });
+
+        function joinGame() {
+            const nameInput = document.getElementById('name-input');
+            const name = nameInput.value.trim();
+            
+            if (name) {
+                socket.emit('join', name);
+            } else {
+                alert('Please enter a name');
+            }
+        }
+
+        socket.on('join_success', (data) => {
+            playerName = data.name;
+            const nameInput = document.getElementById('name-input');
+            const joinButton = document.getElementById('join-button');
+            
+            nameInput.disabled = true;
+            joinButton.disabled = true;
+            joinButton.textContent = 'Joined';
+            joinButton.classList.add('joined');
+        });
+
+       socket.on('robot_arrived', () => {
+       console.log('Robot has reached the waypoint');
+        });
+
+        socket.on('update_players', (data) => {
+            const playersList = document.getElementById('players');
+            const playerCount = data.players.length;
+            const waitingMessage = document.getElementById('waiting-message');
+            
+            playersList.innerHTML = data.players
+                .map(name => `<div class="player-item">${name}</div>`)
+                .join('');
+            
+            document.getElementById('player-count').textContent = playerCount;
+            document.getElementById('required-players').textContent = data.required;
+            
+            if (playerCount < data.required) {
+                waitingMessage.textContent = `Waiting for ${data.required - playerCount} more players to join...`;
+            } else if (playerCount === data.required) {
+                waitingMessage.textContent = 'All players joined! Starting game...';
+                socket.emit('start_game');
+            }
+        });
+
+        socket.on('timer', (time) => {
+            document.getElementById('time').textContent = time;
+            if (time === 0) {
+                submitCurrentAnswer();
+            }
+        });
+
+        function initHeartPump() {
+            const heart = document.getElementById('heart');
+            const pumpCounter = document.getElementById('pump-counter');
+            const pumpButton = document.querySelector('.pump-btn');
+            
+            
+            pumpCount = 0;
+            pumpCounter.textContent = 'Pumps: 0';
+            pumpButton.disabled = false;
+            
+          
+            heart.className = 'size-1';
+            
+           
+            const newPumpButton = pumpButton.cloneNode(true);
+            pumpButton.parentNode.replaceChild(newPumpButton, pumpButton);
+            
+            
+            newPumpButton.addEventListener('click', () => {
+                pumpCount++;
+                pumpCounter.textContent = `Pumps: ${pumpCount}`;
+                
+                
+                heart.className = `size-${pumpCount}`;
+                
+               
+                heart.classList.add('pumping');
+                setTimeout(() => {
+                    heart.classList.remove('pumping');
+                }, 100);
+                
+                
+                if (pumpCount >= 5) {
+                    newPumpButton.disabled = true;
+                    socket.emit('answer', {
+                        player: playerName,
+                        answer: pumpCount.toString()
+                    });
+                }
+            });
+        }
+
+        socket.on('question', (data) => {
+            document.getElementById('game').classList.remove('hidden');
+            document.getElementById('join').classList.add('hidden');
+            document.getElementById('question').textContent = data.question;
+            
+            document.getElementById('text-input').classList.add('hidden');
+            document.getElementById('canvas-container').classList.add('hidden');
+            document.getElementById('dragdrop-container').classList.add('hidden');
+            document.getElementById('heart-container').classList.add('hidden');
+            
+            resetInputStates();
+            
+            if (data.type === 'text') {
+                document.getElementById('text-input').classList.remove('hidden');
+                const answerInput = document.getElementById('answer-input');
+                const submitButton = document.querySelector('#text-input button');
+                answerInput.value = '';
+                answerInput.disabled = false;
+                submitButton.disabled = false;
+                answerInput.focus();
+            } 
+            else if (data.type === 'draw') {
+                document.getElementById('canvas-container').classList.remove('hidden');
+                const submitDrawingButton = document.querySelector('#canvas-container button:last-child');
+                submitDrawingButton.disabled = false;
+                initCanvas();
+            }
+            else if (data.type === 'dragdrop') {
+                document.getElementById('dragdrop-container').classList.remove('hidden');
+                const submitDragDropButton = document.querySelector('#dragdrop-container button');
+                submitDragDropButton.disabled = false;
+                initDragDrop(data.tools, data.background);
+            }
+            else if (data.type === 'heart-pump') {
+                document.getElementById('heart-container').classList.remove('hidden');
+                initHeartPump();
+            }
+    
+            document.getElementById('answer-statuses').innerHTML = '';
+        });
+
+        function resetInputStates() {
+            const answerInput = document.getElementById('answer-input');
+            const textSubmitButton = document.querySelector('#text-input button');
+            if (answerInput && textSubmitButton) {
+                answerInput.value = '';
+                answerInput.disabled = false;
+                textSubmitButton.disabled = false;
+            }
+
+            const drawingButtons = document.querySelectorAll('#canvas-container button');
+            drawingButtons.forEach(button => button.disabled = false);
+
+            const dragDropButton = document.querySelector('#dragdrop-container button');
+            if (dragDropButton) {
+                dragDropButton.disabled = false;
+            }
+
+            const heartContainer = document.getElementById('heart-container');
+            if (heartContainer) {
+                heartContainer.classList.add('hidden');
+            }
+
+            const answerStatuses = document.getElementById('answer-statuses');
+            if (answerStatuses) {
+                answerStatuses.innerHTML = '';
+            }
+        }
+
+        function initCanvas() {
+            const canvas = document.getElementById('drawingCanvas');
+            ctx = canvas.getContext('2d');
+            
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            canvas.removeEventListener('mousedown', startDrawing);
+            canvas.removeEventListener('mousemove', draw);
+            canvas.removeEventListener('mouseup', stopDrawing);
+            canvas.removeEventListener('mouseout', stopDrawing);
+            
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseout', stopDrawing);
+        }
+
+        function startDrawing(e) {
+            isDrawing = true;
+            const rect = e.target.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            const rect = e.target.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            ctx.lineTo(x, y);
+            ctx.stroke();
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+        }
+
+        function clearCanvas() {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function submitDrawing() {
+            const canvas = document.getElementById('drawingCanvas');
+            socket.emit('answer', {
+                player: playerName,
+                answer: canvas.toDataURL()
+            });
+            document.querySelector('#canvas-container button:last-child').disabled = true;
+        }
+
+        function initDragDrop(tools, background) {
+            const toolsDiv = document.getElementById('tools');
+            const dropZone = document.getElementById('drop-zone');
+            
+            
+            toolsDiv.innerHTML = '';
+            dropZone.innerHTML = '';
+            
+            
+            if (background) {
+                dropZone.style.backgroundImage = `url(${background})`;
+                dropZone.style.backgroundColor = 'transparent';
+            }
+            
+            
+            tools.forEach(tool => {
+                const toolDiv = document.createElement('div');
+                toolDiv.className = 'tool';
+                toolDiv.id = `tool-${tool.id}`;
+                toolDiv.draggable = true;
+                
+                const img = document.createElement('img');
+                img.src = tool.img;
+                img.alt = tool.id;
+                
+                toolDiv.appendChild(img);
+                toolsDiv.appendChild(toolDiv);
+    
+               
+                toolDiv.addEventListener('dragstart', (e) => {
+                    currentDragElement = e.target;
+                    e.dataTransfer.setData('text/plain', tool.id);
+                    e.target.classList.add('dragging');
+                });
+    
+                toolDiv.addEventListener('dragend', (e) => {
+                    e.target.classList.remove('dragging');
+                    currentDragElement = null;
+                });
+            });
+    
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            });
+    
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const toolId = e.dataTransfer.getData('text/plain');
+                const tool = tools.find(t => t.id === toolId);
+                
+                if (tool) {
+                    const rect = dropZone.getBoundingClientRect();
+                    const x = ((e.clientX - rect.left) / rect.width) * 100;
+                    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    
+                    let positionedTool = document.getElementById(`positioned-${toolId}`);
+                    if (!positionedTool) {
+                        positionedTool = document.createElement('div');
+                        positionedTool.id = `positioned-${toolId}`;
+                        positionedTool.className = 'positioned-tool';
+                        positionedTool.innerHTML = `<img src="${tool.img}" alt="${tool.id}">`;
+                        dropZone.appendChild(positionedTool);
+                    }
+    
+                    positionedTool.style.left = `${x}%`;
+                    positionedTool.style.top = `${y}%`;
+                    positionedTool.dataset.finalPosition = `${x},${y}`;
+                }
+            });
+        }
+
+        function submitDragDrop() {
+            const positions = {};
+            document.querySelectorAll('.positioned-tool').forEach(tool => {
+                const toolId = tool.id.replace('positioned-', '');
+                if (tool.dataset.finalPosition) {
+                    positions[toolId] = tool.dataset.finalPosition;
+                }
+            });
+            
+            socket.emit('answer', {
+                player: playerName,
+                answer: JSON.stringify(positions)
+            });
+            document.querySelector('#dragdrop-container button').disabled = true;
+        }
+
+        function submitAnswer() {
+            const answer = document.getElementById('answer-input').value.trim();
+            if (answer) {
+                socket.emit('answer', {
+                    player: playerName,
+                    answer: answer
+                });
+                document.getElementById('answer-input').disabled = true;
+                document.querySelector('#text-input button').disabled = true;
+            }
+        }
+
+        function submitCurrentAnswer() {
+            const textInput = document.getElementById('text-input');
+            const canvasContainer = document.getElementById('canvas-container');
+            const dragDropContainer = document.getElementById('dragdrop-container');
+            const heartContainer = document.getElementById('heart-container');
+        
+            if (!textInput.classList.contains('hidden')) {
+                const answer = document.getElementById('answer-input').value.trim();
+                if (answer && !document.getElementById('answer-input').disabled) {
+                    submitAnswer();
+                }
+            }
+            else if (!canvasContainer.classList.contains('hidden')) {
+                const canvas = document.getElementById('drawingCanvas');
+                if (!document.querySelector('#canvas-container button:last-child').disabled) {
+                    submitDrawing();
+                }
+            }
+            else if (!dragDropContainer.classList.contains('hidden')) {
+                if (!document.querySelector('#dragdrop-container button').disabled) {
+                    submitDragDrop();
+                }
+            }
+            else if (!heartContainer.classList.contains('hidden')) {
+                const pumpButton = document.querySelector('.pump-btn');
+                if (!pumpButton.disabled && pumpCount < 5) {
+                    while (pumpCount < 5) {
+                        pumpButton.click();
+                    }
+                }
+            }
+        }
+
+        socket.on('answer_confirmed', (data) => {
+            const statusDiv = document.getElementById('answer-statuses');
+            const playerStatus = document.createElement('div');
+            playerStatus.className = 'status-item answered';
+            playerStatus.textContent = `${data.player} has answered`;
+            statusDiv.appendChild(playerStatus);
+        });
+
+        socket.on('results', (data) => {
+            document.getElementById('game').classList.add('hidden');
+            document.getElementById('results').classList.remove('hidden');
+            
+            const winnerDiv = document.getElementById('winner');
+            if (data.tied) {
+                winnerDiv.textContent = `Tie between ${data.winners.join(' and ')}!`;
+            } else {
+                winnerDiv.textContent = `Winner: ${data.winners[0]}!`;
+            }
+            
+            const scoresDiv = document.getElementById('scores');
+            scoresDiv.innerHTML = Object.entries(data.scores)
+                .map(([player, score]) => 
+                    `<div class="score-item">${player}: ${score}</div>`
+                ).join('');
+        });
+
+        function playAgain() {
+            location.reload();
+        }
+    </script>
+</body>
+</html>
